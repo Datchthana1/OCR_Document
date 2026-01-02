@@ -12,29 +12,21 @@ import re
 app = FastAPI(title="OCR API Tesseract", description="PDF OCR Service with Thai and English support")
 
 def clean_ocr_text(text: str) -> str:
-    """
-    ทำความสะอาดข้อความ OCR โดยกรอง noise และตัวอักษรที่ไม่ต้องการออก
-    """
-    # ลบ noise patterns ที่พบบ่อย (ตัวอักษรซ้ำๆ, คำไร้ความหมาย)
     noise_patterns = [
-        r'\b[A-Z]\s+[A-Z]\s+[A-Z]',  # K K K, KK KK
-        r'\b[A-Z]{1,2}\b(?=\s+[A-Z]{1,2}\b)',  # ตัวอักษรเดี่ยวๆ ติดกัน
-        r'\b(wv|eo|wo|wa|KK|K)\b',  # คำเฉพาะที่เป็น noise
-        r'[ฆๅ]+\s*[๐-๙]+',  # อักขระไทยแปลกๆ + ตัวเลขไทย
+        r'\b[A-Z]\s+[A-Z]\s+[A-Z]',
+        r'\b[A-Z]{1,2}\b(?=\s+[A-Z]{1,2}\b)',
+        r'\b(wv|eo|wo|wa|KK|K)\b',
+        r'[ฆๅ]+\s*[๐-๙]+',
     ]
 
     for pattern in noise_patterns:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-    # กรองเฉพาะตัวอักษรที่ต้องการ
-    # ภาษาไทย + อังกฤษ + ตัวเลข + เครื่องหมายวรรคตอนทั่วไป
     allowed_pattern = r'[^\u0E00-\u0E7Fa-zA-Z0-9\s.,!?;:()\[\]{}\'\"@#$%&*+\-=/<>₿฿]'
     cleaned = re.sub(allowed_pattern, '', text)
 
-    # ลบช่องว่างซ้ำซ้อนและตัวอักษรเดี่ยวที่เหลือ
     cleaned = ' '.join(cleaned.split())
 
-    # ลบคำที่เป็นตัวอักษรเดี่ยว 1-2 ตัวที่อยู่โดดๆ (เช่น "a" "K")
     cleaned = re.sub(r'\s+\b[a-zA-Z]{1,2}\b\s+', ' ', cleaned)
 
     return cleaned.strip()
@@ -71,7 +63,6 @@ async def pdf_ocr(request: Request, extract_tables: bool = True):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
 
-    # Tesseract Configuration สำหรับความแม่นยำสูงสุด
     tesseract_config = r'--oem 1 --psm 12 -c preserve_interword_spaces=1 -c tessedit_char_whitelist="กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮะัาำิีึืุูเแโใไ็่้๊๋์ํ๎abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?;:()[]{}@#$%&*+-=/<>฿"'
 
     ocr = TesseractOCR(lang='tha+eng')
@@ -81,14 +72,12 @@ async def pdf_ocr(request: Request, extract_tables: bool = True):
     total_tables = 0
 
     for i, page in enumerate(pages):
-        # OCR ด้วย configuration ที่ปรับแต่งแล้ว
         page_text = pytesseract.image_to_string(
             page,
             lang='tha+eng',
             config=tesseract_config
         )
 
-        # ทำความสะอาดข้อความ: กรองตัวอักษรขยะและช่องว่างที่ไม่จำเป็น
         page_text_cleaned = clean_ocr_text(page_text)
 
         all_text.append(page_text_cleaned)
@@ -107,7 +96,6 @@ async def pdf_ocr(request: Request, extract_tables: bool = True):
                 for table_idx, table in enumerate(extracted_tables):
                     df = table.df
 
-                    # ทำความสะอาดข้อมูลในตาราง - กรองตัวอักษรขยะ
                     df = df.applymap(lambda x: clean_ocr_text(str(x)) if x else '')
 
                     table_data = df.values.tolist()

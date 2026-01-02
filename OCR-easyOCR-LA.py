@@ -165,7 +165,7 @@ async def pdf_ocr(request: Request):
         if not pdf_bytes.startswith(b'%PDF'):
             raise HTTPException(status_code=400, detail="Invalid PDF format")
 
-        pages = convert_from_bytes(pdf_bytes, dpi=350, poppler_path='/opt/homebrew/bin')
+        pages = convert_from_bytes(pdf_bytes, dpi=400, poppler_path='/opt/homebrew/bin')
     except HTTPException:
         raise
     except Exception as e:
