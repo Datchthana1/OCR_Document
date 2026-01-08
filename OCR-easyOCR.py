@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 import logging
 
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,6 +64,10 @@ async def pdf_ocr(request: Request):
         pages=pages_data,
         full_text="\n".join(all_text)
     )
+
+# @app.post("/ocr/msoffice", response_model=OCRResponse)
+# def msoffice_ocr(request: Request):
+
 
 @app.get("/")
 async def root():

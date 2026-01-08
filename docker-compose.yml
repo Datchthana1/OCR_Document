@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  ocr-app:
+    build: .
+    container_name: ocr-app
+    ports:
+      - "9001:9001"
+    volumes:
+      - .:/OCR
+      - /OCR/__pycache__
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
