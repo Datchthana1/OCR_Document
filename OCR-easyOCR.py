@@ -15,7 +15,12 @@ app = FastAPI(title="OCR API EasyOCR", description="PDF OCR Service with Thai an
 
 # Initialize EasyOCR reader at startup (not per request)
 logger.info("Initializing EasyOCR reader...")
-reader = easyocr.Reader(['th','en'], gpu=False)
+reader = easyocr.Reader(
+    ['th','en'], 
+    gpu=False, 
+    model_storage_directory='/models/ocr',
+    download_enabled=True
+    )
 logger.info("EasyOCR reader initialized successfully")
 
 class PageContent(BaseModel):
