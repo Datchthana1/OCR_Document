@@ -8,7 +8,11 @@ services:
       - "9001:9001"
     volumes:
       - .:/OCR
+      - ocr_models:/models/ocr
       - /OCR/__pycache__
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
+
+volumes:
+  ocr-app:
