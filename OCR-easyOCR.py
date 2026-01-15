@@ -1,87 +1,111 @@
 from pdf2image import convert_from_bytes
 import easyocr
 import numpy as np
+import cv2
+import torch
 from typing import List
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 import logging
+from langchain_core.documents import Document
 
+torch.set_num_threads(4)
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="OCR API EasyOCR", description="PDF OCR Service with Thai and English support")
+app = FastAPI(
+    title="OCR API EasyOCR",
+    description="Optimized PDF OCR Service (Thai + English)"
+)
 
-# Initialize EasyOCR reader at startup (not per request)
-logger.info("Initializing EasyOCR reader...")
 reader = easyocr.Reader(
-    ['th','en'], 
-    gpu=False, 
-    model_storage_directory='/models/ocr',
-    download_enabled=True
-    )
-logger.info("EasyOCR reader initialized successfully")
+    ['th', 'en'],
+    gpu=False
+)
 
 class PageContent(BaseModel):
     page_number: int
     content: str
 
 class OCRResponse(BaseModel):
-    pages: List[PageContent]
-    full_text: str
+    text: str
+    pages: list[dict]
 
 @app.post("/ocr/pdf", response_model=OCRResponse)
 async def pdf_ocr(request: Request):
-    try:
-        logger.info("Receiving PDF request...")
-        pdf_bytes = await request.body()
-        logger.info(f"PDF size: {len(pdf_bytes)} bytes")
+    pdf_bytes = await request.body()
 
-        if not pdf_bytes:
-            raise HTTPException(status_code=400, detail="No data received")
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="No data received")
 
-        if not pdf_bytes.startswith(b'%PDF'):
-            raise HTTPException(status_code=400, detail="Invalid PDF format")
+    if not pdf_bytes.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="Invalid PDF format")
 
-        logger.info("Converting PDF to images...")
-        pages = convert_from_bytes(pdf_bytes, dpi=350)
-        logger.info(f"Converted {len(pages)} pages")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error processing PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
+    pages = convert_from_bytes(pdf_bytes, dpi=180)
 
-    all_text = []
-    pages_data = []
+    pages_data: List[PageContent] = []
+    all_text: list[str] = []
 
     for i, page in enumerate(pages):
-        logger.info(f"Processing page {i+1}/{len(pages)}...")
-        result = reader.readtext(np.array(page))
-        page_text = " ".join([text for _, text, _ in result])
-        all_text.append(page_text)
-        pages_data.append(PageContent(page_number=i+1, content=page_text))
-        logger.info(f"Page {i+1} completed")
+        img = np.array(page)
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
-    logger.info("OCR processing completed successfully")
-    return OCRResponse(
-        pages=pages_data,
-        full_text="\n".join(all_text)
+        h, w = gray.shape
+        if w > 1600:
+            scale = 1600 / w
+            gray = cv2.resize(gray, None, fx=scale, fy=scale)
+
+        result = reader.readtext(
+            gray,
+            detail=0,
+            paragraph=False
+        )
+
+        page_text = " ".join(result).strip()
+
+        if page_text:
+            pages_data.append(
+                PageContent(
+                    page_number=i + 1,
+                    content=page_text
+                )
+            )
+            all_text.append(page_text)
+
+    full_text = "\n".join(all_text).strip()
+
+    if not full_text:
+        raise HTTPException(
+            status_code=422,
+            detail="OCR failed: no readable text found in PDF"
+        )
+
+    lc_document = Document(
+        page_content=full_text,
+        metadata={
+            "source": "pdf_ocr",
+            "page_count": len(pages)
+        }
     )
 
-# @app.post("/ocr/msoffice", response_model=OCRResponse)
-# def msoffice_ocr(request: Request):
-
-
-@app.get("/")
-async def root():
-    return {"message": "OCR API is running", "endpoints": ["/ocr/pdf"]}
+    return OCRResponse(
+        text=lc_document.page_content,
+        pages=[p.model_dump() for p in pages_data]
+    )
 
 @app.get("/health")
 async def health():
     return {
         "status": "healthy",
-        "model_loaded": reader is not None,
-        "supported_languages": ['th', 'en']
+        "ocr_engine": "EasyOCR",
+        "languages": ["th", "en"],
+        "gpu": False
+    }
+
+@app.get("/")
+async def root():
+    return {
+        "message": "OCR API running",
+        "endpoint": "/ocr/pdf"
     }
